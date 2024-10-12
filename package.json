@@ -1,0 +1,65 @@
+{
+  "name": "fsyacc-language-service",
+  "displayName": "FsYacc Language Service",
+  "description": "Simple language service for FsYacc",
+  "publisher": "ijklam",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ijklam/fsyacc-language-service.git"
+  },
+  "license": "MIT",
+  "contributes": {
+    "languages": [
+      {
+        "id": "fsyacc",
+        "aliases": [
+          "FsYacc"
+        ],
+        "extensions": [
+          ".fsy"
+        ],
+        "configuration": "./fsyacc.configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "fsyacc",
+        "scopeName": "source.fsyacc",
+        "path": "./syntaxes/FsYacc.tmLanguage"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.8",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.94.0",
+    "@typescript-eslint/eslint-plugin": "^8.7.0",
+    "@typescript-eslint/parser": "^8.7.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.11.1",
+    "typescript": "^5.6.2"
+  },
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7",
+    "vscode-languageclient": "^9.0.1"
+  }
+}

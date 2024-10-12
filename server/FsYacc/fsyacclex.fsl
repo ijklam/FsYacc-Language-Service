@@ -1,0 +1,148 @@
+{
+(* (c) Microsoft Corporation 2005-2008.  *)
+
+module FsLexYacc.FsYacc.Lexer
+  
+open FsLexYacc.FsYacc.AST
+open FsLexYacc.FsYacc.Parser
+open System.Text
+open FSharp.Text.Lexing
+open TextUtils
+
+let range(lexbuf : LexBuffer<_>) = parserRangeToLspRange(lexbuf.StartPos, lexbuf.EndPos)
+let lexeme  (lexbuf : LexBuffer<char>) = new System.String(lexbuf.Lexeme)
+let newline (lexbuf:LexBuffer<_>) = lexbuf.EndPos <- lexbuf.EndPos.NextLine
+
+let unexpected_char lexbuf =
+  let str = lexeme lexbuf in
+  let range = range lexbuf in
+  failwithf "Unexpected character '%s' at (%d, %d)" str (range.Start.Line + 1u) (range.Start.Character + 1u)
+
+let typeDepth = ref 0
+let startPos = ref Position.Empty
+let mutable str_buf = new System.Text.StringBuilder()
+
+let appendBuf (str:string) = str_buf.Append str |> ignore
+let clearBuf () = str_buf <- new System.Text.StringBuilder()
+
+} 
+
+let letter = ['A'-'Z'] | ['a'-'z']
+let digit = ['0'-'9']
+let whitespace = [' ' '\t']
+let newline = ('\n' | '\r' '\n')
+let ident_start_char = letter       
+let ident_char = ( ident_start_char| digit | ['\'' '_'] )
+let ident = ident_start_char ident_char*
+
+rule token = parse
+ | "%{" { let p = lexbuf.StartPos in header p (new StringBuilder 100) lexbuf }
+ | "%%" { PERCENT_PERCENT }
+ | "%token" (whitespace* '<') { typeDepth.Value <- 1; startPos.Value <- lexbuf.StartPos; clearBuf(); TOKEN (fs_type lexbuf.StartPos lexbuf) }
+ | "%token" { TOKEN (None) }
+ | "%start"{ START }
+ | "%prec"{ PREC }
+ | "%type" (whitespace* '<') { typeDepth.Value <- 1; startPos.Value <- lexbuf.StartPos; clearBuf(); TYPE (match fs_type lexbuf.StartPos lexbuf with Some x -> x | None -> failwith "gettype") }
+ | "%left" { LEFT }
+ | "%right" { RIGHT }
+ | "%nonassoc" { NONASSOC }
+ | "error" { ERROR }
+ | '<' { LESS }
+ | '>' { GREATER }
+ | ';' { SEMI }
+ | '{' { let p = lexbuf.StartPos in 
+         let buff = (new StringBuilder 100) in
+         // adjust the first line to get even indentation for all lines w.r.t. the left hand margin
+         buff.Append (String.replicate (lexbuf.StartPos.Column+1) " ")  |> ignore;
+         code p buff lexbuf }
+ | whitespace+  { token lexbuf }
+ | newline { newline lexbuf; token lexbuf }
+ | ident_start_char ident_char* { IDENT (lexeme lexbuf, range lexbuf) }
+ | '|' { BAR }
+ | "/*" { ignore(comment lexbuf); token lexbuf }
+ | "//" [^'\n''\r']* {  token lexbuf  }
+ | ':' { COLON }
+ | _ { unexpected_char lexbuf }     
+ | eof { EOF  }  
+
+and fs_type p = parse
+  | '<' { typeDepth.Value <- typeDepth.Value + 1; appendBuf(lexeme lexbuf); fs_type lexbuf.StartPos lexbuf}
+  | '>'
+    { typeDepth.Value <- typeDepth.Value - 1; 
+      if typeDepth.Value = 0
+      then Some(string str_buf, parserRangeToLspRange(p, lexbuf.EndPos)) 
+      else appendBuf(lexeme lexbuf); fs_type p lexbuf }
+  | _ { appendBuf(lexeme lexbuf); fs_type p lexbuf } 
+                                   
+and header p buff = parse
+ | "%}" { HEADER (buff.ToString(), parserRangeToLspRange(p, lexbuf.EndPos)) }
+ | newline { newline lexbuf; 
+             ignore <| buff.Append System.Environment.NewLine; 
+             header p buff lexbuf }
+ | (whitespace | letter | digit) +  
+      { ignore <| buff.Append (lexeme lexbuf); 
+        header p buff lexbuf }
+ | "//" [^'\n''\r']*
+      { ignore <| buff.Append (lexeme lexbuf); 
+        header p buff lexbuf }
+ | "'\"'" | "'\\\"'"
+      { ignore <| buff.Append (lexeme lexbuf); 
+        header p buff lexbuf }
+ | "\"" 
+      { ignore <| buff.Append (lexeme lexbuf); 
+        ignore(codestring buff lexbuf); 
+        header p buff lexbuf }
+ | eof { EOF }
+ | _ { ignore <| buff.Append(lexeme lexbuf).[0]; 
+       header p buff lexbuf }
+and code p buff = parse
+ | "}" { CODE (buff.ToString(), parserRangeToLspRange(p, lexbuf.EndPos)) }
+ | "{" { ignore <| buff.Append (lexeme lexbuf); 
+         ignore(code p buff lexbuf); 
+         ignore <| buff.Append "}"; 
+         code p buff lexbuf }
+ | newline { newline lexbuf; 
+             ignore <| buff.Append System.Environment.NewLine; 
+             code p buff lexbuf }
+ | "'\"'" | "'\\\"'"
+      { ignore <| buff.Append (lexeme lexbuf); 
+        code p buff lexbuf }
+ | "\"" { ignore <| buff.Append (lexeme lexbuf); 
+          ignore(codestring buff lexbuf); 
+          code p buff lexbuf }
+ | (whitespace | letter | digit) +  
+   { ignore <| buff.Append (lexeme lexbuf); 
+     code p buff lexbuf }
+ | "//" [^'\n''\r']*
+   { ignore <| buff.Append (lexeme lexbuf); 
+     code p buff lexbuf }
+ | eof { EOF }
+ | _ { ignore <| buff.Append(lexeme lexbuf).[0]; 
+       code p buff lexbuf }
+
+
+and codestring buff = parse
+ |  '\\' ('"' | '\\')
+   { ignore <| buff.Append (lexeme lexbuf); 
+     codestring buff lexbuf } 
+ | '"' { ignore <| buff.Append (lexeme lexbuf); 
+         buff.ToString() }
+ | newline { newline lexbuf; 
+             ignore <| buff.Append System.Environment.NewLine; 
+             codestring buff lexbuf }
+ | (whitespace | letter | digit) +  
+   { ignore <| buff.Append (lexeme lexbuf); 
+     codestring buff lexbuf }
+ | eof { failwith "unterminated string in code" }
+ | _ { ignore <| buff.Append(lexeme lexbuf).[0]; 
+       codestring buff lexbuf }
+
+
+and comment = parse
+ | "/*" { ignore(comment lexbuf); comment lexbuf }
+ | newline { newline lexbuf; comment lexbuf }
+ | "*/" { () }
+ | eof { failwith "end of file in comment" }
+ | [^ '/' '*' '\n' '\r' '"' '/' ]+  { comment lexbuf }
+ | _  { comment lexbuf }
+
