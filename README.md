@@ -23,7 +23,7 @@ Provide simple language service for FsYacc (.fsy files).
 
 ## Requirements
 
-.NET Core 3.0 or later.
+.NET 6 or later.
 
 <!-- ## Extension Settings
 
@@ -42,6 +42,10 @@ Document outline and Inlay hints may fail while editing.
 
 ## Release Notes
 
-### 1.0.0
+### 0.0.2
+
+Update Readme - Requirements.
+
+### 0.0.1
 
 Initial release.

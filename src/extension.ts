@@ -7,18 +7,17 @@ import * as vscode from "vscode";
 import { LanguageClient, TransportKind } from "vscode-languageclient/node";
 
 let client: LanguageClient;
+let outputChannel: vscode.OutputChannel;
 
 export function activate(context: vscode.ExtensionContext) {
-  let serverMain = findInPath("dotnet") ?? "dotnet";
-  let args = [
-    path.join(
-      ..."out\\server\\FsYacc.LanguageServer.dll".split(
-        "\\"
-      )
-    ),
-  ];
+  outputChannel = vscode.window.createOutputChannel("FsYaccLsp");
 
-  console.log("Going to start server with command  ", serverMain, args, context.extensionPath);
+  let serverMain = findInPath("dotnet") ?? "dotnet";
+  let args = [path.join(context.extensionPath, "dist", "server", "FsYacc.LanguageServer.dll")];
+
+  outputChannel.append(
+    `Going to start server with command ${serverMain}, ${args}, ${context.extensionPath}`
+  );
   let client = new LanguageClient(
     "FsYacc",
     {
@@ -49,6 +48,7 @@ export function activate(context: vscode.ExtensionContext) {
 // This method is called when your extension is deactivated
 export function deactivate() {
   client?.stop();
+  outputChannel?.dispose();
 }
 
 function findInPath(binname: string) {
@@ -57,6 +57,11 @@ function findInPath(binname: string) {
     let binpath = path.join(pathparts[i], binname);
     if (fs.existsSync(binpath)) {
       return binpath;
+    }
+
+    let binpath2 = binpath + ".exe";
+    if (fs.existsSync(binpath2)) {
+      return binpath2;
     }
   }
   return null;
