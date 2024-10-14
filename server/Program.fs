@@ -13,15 +13,35 @@ open System.IO
 
 type FsYaccSymbolKind = FsLexYacc.FsYacc.Driver.SymbolKind
 
-type YaccLspServer(logger: Logger) =
+type Config =
+    { ShowDollarReferenceInFindingReferencesOfRulesOrTokens: bool }
+
+    static member Default = { ShowDollarReferenceInFindingReferencesOfRulesOrTokens = false }
+
+let makeCallHierarchyItem name token uri r =
+    {
+        CallHierarchyItem.Data = Some(Json.fromObject token)
+        Name = name
+        Kind = SymbolKind.Function
+        Tags = None
+        Detail = None
+        Uri = uri
+        Range = r
+        SelectionRange = r
+    }
+
+type YaccLspServer(client: LspClient, logger: Logger) =
     inherit LspServer()
 
-    let log (msg: string) =
+    let log (msg: string) = 
+#if DEBUG
+        logger.Information($"[{DateTime.Now}] {msg}")
+#else
         ()
-        // logger.Information($"[{DateTime.Now}] {msg}")
+#endif
 
     let notPossible (param: 't) =
-        logger.Error("Entered a not possible path.\n{}", [|param|])
+        logger.Error("Entered a not possible path.\n{}", [| param |])
         failwith "Entered a not possible path."
 
     let docs = Dictionary()
@@ -57,6 +77,9 @@ type YaccLspServer(logger: Logger) =
 
     override __.Initialize(p) =
         log $"Initialize {p.RootUri}"
+        let capabilities = p.Capabilities
+        let hasConfigurationCapability = 
+            capabilities.Workspace.IsSome && capabilities.Workspace.Value.Configuration.IsSome
 
         { InitializeResult.Default with
             Capabilities =
@@ -64,6 +87,7 @@ type YaccLspServer(logger: Logger) =
                     DefinitionProvider = Some(U2.C1 true)
                     ReferencesProvider = Some(U2.C1 true)
                     HoverProvider = Some(U2.C1 true)
+                    CallHierarchyProvider = Some(U3.C1 true)
                     DocumentSymbolProvider =
                         Some
                         <| U2.C2
@@ -140,7 +164,7 @@ type YaccLspServer(logger: Logger) =
                     tokens
                     |> Array.choose (fun ((x, r), k) ->
                         match k with
-                        | FsYaccSymbolKind.DollarRef(x, _) when x = theToken -> Some({ Uri = uri; Range = r })
+                        // | FsYaccSymbolKind.DollarRef(x, _) when x = theToken -> Some({ Uri = uri; Range = r })
                         | FsYaccSymbolKind.Rule
                         | FsYaccSymbolKind.RuleClauseRef when x = theToken -> Some({ Uri = uri; Range = r })
                         | _ -> None)
@@ -165,7 +189,7 @@ type YaccLspServer(logger: Logger) =
                     tokens
                     |> Array.choose (fun ((x, r), k) ->
                         match k with
-                        | FsYaccSymbolKind.DollarRef(x, _) when x = theToken -> Some({ Uri = uri; Range = r })
+                        // | FsYaccSymbolKind.DollarRef(x, _) when x = theToken -> Some({ Uri = uri; Range = r })
                         | FsYaccSymbolKind.RuleClauseRef when x = theToken -> Some({ Uri = uri; Range = r })
                         | _ -> None)
 
@@ -232,7 +256,7 @@ type YaccLspServer(logger: Logger) =
                                |> String.concat "\n"
                                |> fun i -> U2.C2 { Language = "FsYacc"; Value = i }
                            | FsYaccSymbolKind.RuleClauseRef
-                           | FsYaccSymbolKind.DollarRef _ -> notPossible() |]
+                           | FsYaccSymbolKind.DollarRef _ -> notPossible () |]
                     )
                   Range = None }
 
@@ -250,22 +274,22 @@ type YaccLspServer(logger: Logger) =
 
             let r =
                 tokens
-                |> Array.choose (fun ((x, r), k) -> 
+                |> Array.choose (fun ((x, r), k) ->
                     match k with
                     | FsYaccSymbolKind.Type
                     | FsYaccSymbolKind.Token
                     | FsYaccSymbolKind.DollarRef _
                     | FsYaccSymbolKind.RuleClauseRef -> None
-                    | FsYaccSymbolKind.Rule -> 
-                      { Kind = SymbolKind.Function
-                        Deprecated = None
-                        ContainerName = None
-                        Location =
+                    | FsYaccSymbolKind.Rule ->
+                        { Kind = SymbolKind.Function
+                          Deprecated = None
+                          ContainerName = None
+                          Location =
                             { Uri = arg.TextDocument.Uri
                               Range = r }
-                        Name = x
-                        Tags = None } |> Some
-                )
+                          Name = x
+                          Tags = None }
+                        |> Some)
 
             return U2.C1 r
         }
@@ -321,7 +345,7 @@ type YaccLspServer(logger: Logger) =
                     Detail = Some desc }
             | FsYaccSymbolKind.DollarRef _
             | FsYaccSymbolKind.Type
-            | FsYaccSymbolKind.RuleClauseRef -> notPossible()
+            | FsYaccSymbolKind.RuleClauseRef -> notPossible ()
 
         let findCompletions spec (tokens: (_ * FsYaccSymbolKind) array) (nameMapper: _ array option) =
             let shouldMapName, nameMapper, oldnames =
@@ -379,11 +403,133 @@ type YaccLspServer(logger: Logger) =
                 return findCompletions spec tokens (Some definitions)
         }
 
+    override __.TextDocumentPrepareCallHierarchy (arg: CallHierarchyPrepareParams): AsyncLspResult<CallHierarchyItem array option> = 
+        asyncResultOption {
+            log $"TextDocumentPrepareCallHierarchy {arg.TextDocument.Uri}"
+            let uri = arg.TextDocument.Uri
+            let pos = arg.Position
+            let! spec, tokens = parseFile uri
+            let! ((theToken, r), kind) = tokens |> Array.tryFind (fun ((_, r), _) -> posInRange pos r)
+            let! ((theToken, r), kind) =
+                match kind with
+                | FsYaccSymbolKind.DollarRef(x, _) ->
+                    tokens |> Array.tryFind (fun ((i, r), k) -> (k.IsToken || k.IsRule) && i = x)
+                | FsYaccSymbolKind.RuleClauseRef ->
+                    tokens
+                    |> Array.tryFind (fun ((i, r), k) -> (k.IsToken || k.IsRule) && i = theToken)
+                | _ -> Some((theToken, r), kind)
+
+            match kind with
+            | FsYaccSymbolKind.Token
+            | FsYaccSymbolKind.Rule -> 
+                return [| makeCallHierarchyItem theToken (theToken, r) uri r |]
+            | FsYaccSymbolKind.RuleClauseRef -> return! None
+            | FsYaccSymbolKind.Type
+            | FsYaccSymbolKind.DollarRef _ -> return! None
+        }
+
+    override __.CallHierarchyIncomingCalls (arg: CallHierarchyIncomingCallsParams): AsyncLspResult<CallHierarchyIncomingCall array option> = 
+        asyncResultOption {
+            log $"CallHierarchyIncomingCalls {arg.Item.Name}"
+            let uri = arg.Item.Uri
+            // let pos = arg.Item.Range.Start
+            let! spec, tokens = parseFile uri
+
+            let! data = arg.Item.Data
+            let (lastToken, lastR) = data.ToObject<string * LspRange>()            
+            let! ((theToken, r), kind) = tokens |> Array.tryFind (fun ((_, r), _) -> r = lastR)
+            let! ((theToken, r), kind) =
+                match kind with
+                | FsYaccSymbolKind.DollarRef(x, _) ->
+                    tokens |> Array.tryFind (fun ((i, r), k) -> (k.IsToken || k.IsRule) && i = x)
+                | FsYaccSymbolKind.RuleClauseRef ->
+                    tokens
+                    |> Array.tryFind (fun ((i, r), k) -> (k.IsToken || k.IsRule) && i = theToken)
+                | _ -> Some((theToken, r), kind)
+
+            match kind with
+            | FsYaccSymbolKind.Token
+            | FsYaccSymbolKind.Rule -> 
+                let r = 
+                    spec.Rules
+                    |> List.collect (fun ((ruleName, ruleRange), j) -> 
+                        j
+                        |> List.indexed
+                        |> List.choose (fun (i, (FsLexYacc.FsYacc.AST.Rule(definitions, _, _))) -> 
+                            if definitions.IsEmpty then None else
+                            let ranges =
+                                definitions 
+                                |> List.choose (fun (x, r) -> if x = theToken then Some r else None)
+                                |> Array.ofList
+                            let rr = definitions.Head |> snd
+                            match ranges with
+                            | [||] -> None
+                            | _ -> 
+                                Some {
+                                    CallHierarchyIncomingCall.From = makeCallHierarchyItem $"{ruleName} #{i + 1}" (ruleName, ruleRange) uri rr
+                                    FromRanges = ranges
+                                })
+                    )
+                return r |> Array.ofList
+            | FsYaccSymbolKind.RuleClauseRef -> return! None
+            | FsYaccSymbolKind.Type
+            | FsYaccSymbolKind.DollarRef _ -> return! None
+   
+        }
+
+
+    override __.CallHierarchyOutgoingCalls (arg: CallHierarchyOutgoingCallsParams): AsyncLspResult<CallHierarchyOutgoingCall array option> = 
+        asyncResultOption {
+            log $"CallHierarchyOutgoingCalls {arg.Item.Name}"
+            let uri = arg.Item.Uri
+            // let pos = arg.Item.Range.Start
+            let! spec, tokens = parseFile uri
+
+            let! data = arg.Item.Data
+            let (lastToken, lastR) = data.ToObject<string * LspRange>()
+            let! ((theToken, r), kind) = tokens |> Array.tryFind (fun ((_, r), _) -> r = lastR)
+            let! ((theToken, r), kind) =
+                match kind with
+                | FsYaccSymbolKind.DollarRef(x, _) ->
+                    tokens |> Array.tryFind (fun ((i, r), k) -> (k.IsToken || k.IsRule) && i = x)
+                | FsYaccSymbolKind.RuleClauseRef ->
+                    tokens
+                    |> Array.tryFind (fun ((i, r), k) -> (k.IsToken || k.IsRule) && i = theToken)
+                | _ -> Some((theToken, r), kind)
+
+            match kind with
+            | FsYaccSymbolKind.Rule -> 
+                let r = 
+                    spec.Rules
+                    |> List.filter (fun ((x, _), _) -> x = theToken)
+                    |> List.collect (fun ((ruleName, ruleRange), j) -> 
+                        j
+                        |> List.collect (fun ((FsLexYacc.FsYacc.AST.Rule(definitions, _, _))) -> definitions)
+                        |> List.groupBy fst
+                        |> List.map (fun (x, xs) ->
+                            let ranges = xs |> List.toArray |> Array.map snd
+                            {
+                                CallHierarchyOutgoingCall.To = makeCallHierarchyItem x (x, ranges[0]) uri ruleRange
+                                FromRanges = ranges
+                            }
+                        )
+                    )
+                return r |> Array.ofList
+            | FsYaccSymbolKind.Token
+            | FsYaccSymbolKind.RuleClauseRef
+            | FsYaccSymbolKind.Type
+            | FsYaccSymbolKind.DollarRef _ -> return! None
+       
+        }
+
 let startServer () =
     let logger =
         LoggerConfiguration()
             .MinimumLevel.Debug()
-            .WriteTo.File(Path.Combine(Path.GetTempPath() + "FsYaccLspServerLog", "log.txt"), rollingInterval = RollingInterval.Day)
+            .WriteTo.File(
+                Path.Combine(Path.GetTempPath() + "FsYaccLspServerLog", "log.txt"),
+                rollingInterval = RollingInterval.Day
+            )
             .CreateLogger()
 
     let inStream = System.Console.OpenStandardInput()
@@ -399,7 +545,7 @@ let startServer () =
         (fun _ ->
             { new LspClient() with
                 member _.ToString() : string = base.ToString() })
-        (fun _ -> new YaccLspServer(logger))
+        (fun client -> new YaccLspServer(client, logger))
         (fun handler -> new JsonRpc(handler))
 
 ignore (startServer ())

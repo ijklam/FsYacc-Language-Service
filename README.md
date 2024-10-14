@@ -21,6 +21,9 @@ Provide simple language service for FsYacc (.fsy files).
 4. Document outline
 ![alt text](images/DocumentOutline.png)
 
+5. Call hierarchy
+![alt text](images/CallHierarchy.png)
+
 ## Requirements
 
 .NET 6 or later.
@@ -39,13 +42,3 @@ This extension contributes the following settings:
 ## Known Issues
 
 Document outline and Inlay hints may fail while editing.
-
-## Release Notes
-
-### 0.0.2
-
-Update Readme - Requirements.
-
-### 0.0.1
-
-Initial release.
