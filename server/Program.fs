@@ -754,7 +754,12 @@ type YaccLspServer(client: LspClient, logger: Logger) =
                       ResultId = None }
         }
 
-let startServer () =
+[<EntryPoint>]
+let main args =
+    if args |> Array.contains "--wait-for-debugger" then
+        while not System.Diagnostics.Debugger.IsAttached do
+            System.Threading.Thread.Sleep(100)
+
     let logger =
         LoggerConfiguration()
             .MinimumLevel.Debug()
@@ -786,5 +791,4 @@ let startServer () =
                 member _.ToString() : string = base.ToString() })
         (fun client -> new YaccLspServer(client, logger))
         (fun handler -> new JsonRpc(handler))
-
-ignore (startServer ())
+    |> int

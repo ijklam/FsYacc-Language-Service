@@ -21,6 +21,20 @@
     "ms-dotnettools.vscode-dotnet-runtime"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "fsyacc-language-service.stopLsp",
+        "title": "Stop FsYacc Language Service"
+      },
+      {
+        "command": "fsyacc-language-service.startLsp",
+        "title": "Start FsYacc Language Service"
+      },
+      {
+        "command": "fsyacc-language-service.startLspWaitingDebugger",
+        "title": "Start FsYacc Language Service and wait for debugger to attach"
+      }
+    ],
     "languages": [
       {
         "id": "fsyacc",
