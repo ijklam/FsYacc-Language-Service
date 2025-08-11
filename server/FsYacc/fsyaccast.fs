@@ -18,7 +18,7 @@ type Associativity =
     | RightAssoc
     | NonAssoc
 
-type Rule = Rule of Identifier list * Identifier option * Code option
+type Rule = Rule of definitions: Identifier list * precedence: Identifier option * code: Code option * range: LspRange
 
 type ParserSpec =
     {
@@ -27,8 +27,17 @@ type ParserSpec =
         Types: (Identifier * Identifier) list
         Associativities: (Identifier * Associativity) list list // suggest to do: (Associativity * Identifier list) list
         StartSymbols: Identifier list
-        Rules: (Identifier * Rule list) list
+        Rules: (Identifier * Rule list * LspRange) list
     }
+    static member Empty =
+        {
+            Header = "", emptyRange
+            Tokens = []
+            Types = []
+            Associativities = []
+            StartSymbols = []
+            Rules = []
+        }
 
 type Terminal = string
 type NonTerminal = string

@@ -36,7 +36,7 @@ let readSpecFromString fileName text =
         let spec = Parser.spec Lexer.token lexbuf
         Ok spec
     with e ->
-        (sprintf "%s(%d,%d): error: %s" fileName lexbuf.StartPos.Line lexbuf.StartPos.Column e.Message) |> Result.Error
+        Result.Error(fileName, parserRangeToLspRange(lexbuf.StartPos, lexbuf.EndPos), e.Message)
 
 let printTokensFromString filename text =
     let reader, lexbuf = UnicodeStringAsLexbuf(filename, text)
@@ -61,6 +61,8 @@ type SymbolKind =
     | Rule
     | RuleClauseRef
     | DollarRef of clauseRef: Identifier
+    | Precedence
+    | PrecedenceInRule
 
 let specToSymbols (spec: ParserSpec) =
     let tokens = ResizeArray()
@@ -74,11 +76,11 @@ let specToSymbols (spec: ParserSpec) =
 
     spec.Associativities
     |> Seq.concat
-    |> Seq.iter (fun (token, _) -> tokens.Add(token, SymbolKind.RuleClauseRef))
+    |> Seq.iter (fun (token, _) -> tokens.Add(token, SymbolKind.Precedence))
 
-    for (rule, clauses) in spec.Rules do
+    for (rule, clauses, _) in spec.Rules do
         tokens.Add(rule, SymbolKind.Rule)
-        for Rule(definitions, _, code) in clauses do
+        for Rule(definitions, prec, code, _) in clauses do
             definitions
             |> List.iteri (fun i d ->
                 tokens.Add(d, SymbolKind.RuleClauseRef)
@@ -92,5 +94,9 @@ let specToSymbols (spec: ParserSpec) =
                         tokens.Add((c.Value, r), SymbolKind.DollarRef d))
                 | _ -> ()
             )
+
+            match prec with
+            | None -> ()
+            | Some prec -> tokens.Add(prec, SymbolKind.PrecedenceInRule)
 
     tokens.ToArray()

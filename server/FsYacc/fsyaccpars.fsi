@@ -55,6 +55,7 @@ type nonTerminalId =
     | NONTERM_clause
     | NONTERM_syms
     | NONTERM_optprec
+    | NONTERM_clauseRecovery
 /// This function maps tokens to integer indexes
 val tagOfToken: token -> int
 

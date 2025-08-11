@@ -22,10 +22,20 @@ let parserPosToLspPos (pos: ParserPos) : LspPos =
     { Line = uint (pos.Line - 1)
       Character = uint pos.Column }
 
+let posIsAfter (pos1: LspPos) (pos2: LspPos) =
+    pos1.Line > pos2.Line || (pos1.Line = pos2.Line && pos1.Character > pos2.Character)
+let posIsBefore (pos1: LspPos) (pos2: LspPos) =
+    pos1.Line < pos2.Line || (pos1.Line = pos2.Line && pos1.Character < pos2.Character)
+
 let posInRange (pos: LspPos) (range: LspRange) : bool =
     let start, endPos = range.Start, range.End
     start.Line <= pos.Line && pos.Line <= endPos.Line &&
     start.Character <= pos.Character && pos.Character <= endPos.Character
+
+let posInRangeWithoutBoundary (pos: LspPos) (range: LspRange) : bool =
+    let start, endPos = range.Start, range.End
+    start.Line <= pos.Line && pos.Line <= endPos.Line &&
+    start.Character < pos.Character && pos.Character < endPos.Character
 
 let parserRangeToLspRange (range: ParserRange) : LspRange =
     let start, endPos = range

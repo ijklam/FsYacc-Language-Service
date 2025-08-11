@@ -17,6 +17,9 @@
     "url": "https://github.com/ijklam/fsyacc-language-service.git"
   },
   "license": "MIT",
+  "extensionDependencies": [
+    "ms-dotnettools.vscode-dotnet-runtime"
+  ],
   "contributes": {
     "languages": [
       {

@@ -6,19 +6,32 @@ import * as vscode from "vscode";
 
 import { LanguageClient, TransportKind } from "vscode-languageclient/node";
 
-let client: LanguageClient;
+let client: LanguageClient | null = null;
 let outputChannel: vscode.OutputChannel;
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel("FsYaccLsp");
 
-  let serverMain = findInPath("dotnet") ?? "dotnet";
-  let args = [path.join(context.extensionPath, "dist", "server", "FsYacc.LanguageServer.dll")];
+  const acquireResult: { dotnetPath: string } =
+    await vscode.commands.executeCommand("dotnet.acquire", {
+      version: "9.0",
+      requestingExtensionId: context.extension.id,
+    });
+
+  const serverMain = acquireResult.dotnetPath;
+  const args = [
+    path.join(
+      context.extensionPath,
+      "dist",
+      "server",
+      "FsYacc.LanguageServer.dll"
+    ),
+  ];
 
   outputChannel.append(
     `Going to start server with command ${serverMain}, ${args}, ${context.extensionPath}`
   );
-  let client = new LanguageClient(
+  const client = new LanguageClient(
     "FsYacc",
     {
       command: serverMain,
@@ -32,6 +45,8 @@ export function activate(context: vscode.ExtensionContext) {
       },
     },
     {
+      diagnosticCollectionName: "FsYacc",
+      outputChannel: outputChannel,
       documentSelector: [
         { scheme: "file", language: "fsyacc" },
         { scheme: "untitled", language: "fsyacc" },
